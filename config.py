@@ -1,0 +1,6 @@
+import os
+
+TOKEN = "8724621215:AAELqEv2gCrpk6CpmX_nnjSeCuvEQ2KZXuM"
+CHANNEL_ID = -1003208153185 # ID канала для ставок
+ADMINS = [7313407194] # Список ID администраторов
+CRYPTO_PAY_TOKEN = "531599:AAxGq5ZSfCUBnSn0gyfUCyB5tB4VKr0rmRd"
