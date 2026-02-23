@@ -1,4 +1,3 @@
-
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, LinkPreviewOptions, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -26,6 +25,26 @@ from keyboards import (
 
 router = Router()
 crypto = AioCryptoPay(token=CRYPTO_PAY_TOKEN, network=Networks.MAIN_NET)
+
+# Хранилище для фейкового баланса
+class FakeReserve:
+    def __init__(self):
+        self.balance = random.uniform(140, 600)
+        self.last_update = datetime.now()
+    
+    def get_balance(self):
+        # Обновляем баланс, если прошло больше 5 минут
+        if datetime.now() - self.last_update > timedelta(minutes=5):
+            # Случайное изменение в пределах ±50$, но остаемся в диапазоне 140-600
+            change = random.uniform(-50, 50)
+            new_balance = self.balance + change
+            # Ограничиваем диапазоном
+            self.balance = max(140, min(600, new_balance))
+            self.last_update = datetime.now()
+        
+        return round(self.balance, 2)
+
+fake_reserve = FakeReserve()
 
 @router.message(Command("givebalance"))
 async def cmd_give_balance(message: Message, command: CommandObject):
@@ -320,52 +339,48 @@ async def handle_bet_amount(message: Message, state: FSMContext):
     
 @router.message(Command("reserve"))
 async def cmd_reserve(message: Message):
-    try:
-        # Получаем реальные балансы из Crypto Pay
-        balances = await crypto.get_balance()
-        
-        # Список интересующих нас валют
-        assets_to_show = ["USDT", "TON", "TRX"]
-        
-        total_usd = 0.0
-        details_text = ""
-        
-        # Получаем курсы валют для расчета общего резерва в USD
-        exchange_rates = await crypto.get_exchange_rates()
-        
-        for asset_balance in balances:
-            # В библиотеке aiocryptopay поле называется currency или asset
-            # Проверяем атрибут динамически
-            asset_name = getattr(asset_balance, "currency", getattr(asset_balance, "asset", None))
-            
-            if asset_name in assets_to_show:
-                amount = asset_balance.available
-                
-                # Ищем курс к USD
-                rate = 1.0
-                if asset_name != "USDT":
-                    # Ищем пару ASSET/USD
-                    rate_obj = next((r for r in exchange_rates if r.source == asset_name and r.target == "USD"), None)
-                    if rate_obj:
-                        rate = rate_obj.rate
-                
-                asset_usd = amount * rate
-                total_usd += asset_usd
-                
-                details_text += f"{asset_name}: {amount:,.2f} ({asset_usd:,.2f}$)\n"
-        
-        text = (
-            f"🏦 <b>Резерв казино: ${total_usd:,.2f}</b>\n\n"
-            f"<blockquote>"
-            f"🦋 <b>Crypto Bot: {total_usd:,.2f}$</b>\n\n"
-            f"{details_text}"
-            f"</blockquote>\n"
-            f"🔎 <b>В резерве – только реальные деньги, готовые к моментальному выводу. Все прозрачно и честно, никаких задержек!</b>"
-        )
-        await message.answer(text)
-        
-    except Exception as e:
-        await message.answer(f"❌ Ошибка при получении данных резерва: {e}")
+    """Команда проверки резервов (динамический фейк)"""
+    
+    # Получаем актуальный фейковый баланс
+    fake_total_usd = fake_reserve.get_balance()
+    
+    # Список фейковых активов (только USDT)
+    fake_assets = [
+        ("USDT", fake_total_usd, fake_total_usd),
+    ]
+    
+    # Эмодзи для валют
+    currency_emojis = {
+        "USDT": "🟢",
+        "TON": "💎",
+        "BTC": "🟠",
+        "ETH": "🔷",
+        "SOL": "🟣",
+        "TRX": "🔴",
+        "LTC": "🥈",
+        "BNB": "🟡",
+        "USDC": "🔵",
+        "XRP": "⚪"
+    }
+    
+    # Формируем текст с красивым оформлением
+    text = (
+        f"🏦 <b>Резерв казино: ${fake_total_usd:,.2f}</b>\n\n"
+        f"<blockquote>"
+        f"🦋 <b>Crypto Bot: {fake_total_usd:,.2f}$</b>\n\n"
+    )
+    
+    for asset, amount, usd_val in fake_assets:
+        emoji = currency_emojis.get(asset, "🔹")
+        text += f"{emoji} {asset}: {amount:,.2f} ({usd_val:,.2f}$)\n"
+    
+    text += (
+        f"</blockquote>\n"
+        f"🔎 <b>В резерве – только реальные деньги, готовые к моментальному выводу. Все прозрачно и честно, никаких задержек!\n\n"
+        f"🔄 <i>Баланс обновляется автоматически каждые 5 минут</i></b>"
+    )
+    
+    await message.answer(text)
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, command: CommandObject):
@@ -411,7 +426,7 @@ async def cmd_start(message: Message, command: CommandObject):
 
     text = (
         f"🔥 <b>Добро пожаловать, {full_name}!</b>\n\n"
-        f"🚀 <b>Канал где публикуются ставки, акции, новости</b> - t.me/cdeltabet\n\n"
+        f"🚀 <b>Канал где публикуются ставки, акции, новости</b> - @CDeltaBet\n\n"
         f"💸 <b>Забирай 10% кешбек в начале каждого месяца, если ваша игровая статистика оказалась отрицательная. Кешбек приходит в рассылке!</b>\n\n"
         f"<blockquote>Пока ты думаешь, кто-то уже берёт джекпот! 🎰</blockquote>"
     )
@@ -586,7 +601,7 @@ async def back_to_main(callback: CallbackQuery):
     full_name = callback.from_user.full_name
     text = (
         f"🔥 <b>Добро пожаловать, {full_name}!</b>\n\n"
-        f"🚀 <b>Канал где публикуются ставки, акции, новости</b> - t.me/CDeltaBet\n\n"
+        f"🚀 <b>Канал где публикуются ставки, акции, новости</b> - @CDeltaBet\n\n"
         f"💸 <b>Забирай 10% кешбек в начале каждого месяца, если ваша игровая статистика оказалась отрицательная. Кешбек приходит в рассылке!</b>\n\n"
         f"<blockquote>Пока ты думаешь, кто-то уже берёт джекпот! 🎰</blockquote>"
     )
